@@ -21,7 +21,6 @@ from typing import Any, List, Optional, Tuple
 import openai
 import pytz
 import tiktoken
-from dotenv import load_dotenv
 
 # TODO(P1, features): Add Assistant API
 from openai.types import CompletionUsage
@@ -600,8 +599,10 @@ def gpt_response_to_json(raw_response: Optional[str], debug=True) -> Optional[An
 
     # Here do some black-magic regex postprocessing for all previously encountered problems (mostly with GPT 3.5).
     orig_response = raw_response
+    raw_response = raw_response.strip()
     # Output: ```json <text> ```
-    raw_response = re.sub(r"```[a-z\s]*?(.*?)```", r"\1", raw_response, flags=re.DOTALL)
+    if raw_response.startswith("```json") and raw_response.endswith("```"):
+        raw_response = raw_response[7:-3]
 
     # BEFORE DOING ALL THIS MAMBO-JAMBO, lets just try if GPT returned a valid JSON.
     # As some of these replacements actually mess up valid json.
@@ -707,78 +708,3 @@ def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> i
     encoding = tiktoken.get_encoding(encoding_name)
     num_tokens = len(encoding.encode(string))
     return num_tokens
-
-
-if __name__ == "__main__":
-    test_json_with_extra_output = """Output:
-    {
-        "name": "Marco",
-        "mnemonic": "Fashion Italy",
-        "mnemonic_explanation": "Marco has an Italian name and he works in the fashion industry.",
-        "industry": "Fashion",
-        "role": "Unknown",
-        "vibes": "Neutral",
-        "priority": 2,
-        "follow_ups": null,
-        "needs": [
-            "None mentioned."
-        ]
-    }"""
-    test_res = gpt_response_to_json(test_json_with_extra_output)
-    assert test_res["name"] == "Marco"
-
-    load_dotenv()
-    OPEN_AI_API_KEY = os.getenv("OPEN_AI_API_KEY")
-    openai_client = OpenAiClient(open_ai_api_key=OPEN_AI_API_KEY)
-    test_prompt = "list neighborhoods in san francisco as json key: value where key is name and value is zip code"
-    sf_result_1 = openai_client.run_prompt(
-        test_prompt, GPT_3_5_INSTRUCT_MODEL, print_prompt=True
-    )
-    print(sf_result_1)
-    # run again, this should yield a cache hit
-    sf_result_2 = openai_client.run_prompt(
-        test_prompt, CHEAPEST_MODEL, print_prompt=True
-    )
-    assert sf_result_1 == sf_result_2
-    assert len(openai_client.all_prompts) == 1
-
-    # TEST FORMS (doing it here to prevent circular dependency)
-    FOOD_LOG_FIELDS = [
-        FieldDefinition(
-            name="ingredient",
-            field_type="text",
-            label="Ingredient",
-            description="one food item like you would see on an ingredients list",
-        ),
-        FieldDefinition(
-            name="amount",
-            field_type="text",
-            label="Amount",
-            description=(
-                "approximate amount of the ingredient taken, if not specified it can be just using 'a bit' or 'some"
-            ),
-        ),
-        FieldDefinition(
-            name="has_gluten",
-            field_type="bool",
-            label="Has Gluten?",
-            description="does this ingredient have gluten",
-        ),
-    ]
-    test_form = FormDefinition(form_name="food_log", fields=FOOD_LOG_FIELDS)
-
-    datadump = """
-    For lunch I had this nice ricebowl with fair amount of sauted chicken over sesame oil and some smashed tortilla
-    chips as a topping.
-    """
-    food_log_result, test_err = openai_client.fill_in_multi_entry_form(
-        form=test_form, text=datadump
-    )
-    assert test_err is None
-    for food_log_form_data in food_log_result:
-        print(food_log_form_data.to_display_tuples())
-
-    assert len(food_log_result) == 3
-    # [('Ingredient', 'chicken'), ('Amount', 'fair amount'), ('Has Gluten?', False)]
-    # [('Ingredient', 'sesame oil'), ('Amount', 'None'), ('Has Gluten?', False)]
-    # [('Ingredient', 'tortilla chips'), ('Amount', 'some'), ('Has Gluten?', True)]

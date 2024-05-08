@@ -1,4 +1,6 @@
 **/__pycache__/
 .env
 .idea
-gpt-form-filler.egg-info
+.mypy_cache
+.pytest_cache
+gpt_form_filler.egg-info
