@@ -278,6 +278,13 @@ class OpenAiClient:
                 f"Got client-side {type(err)} error - we messed up so lets rethrow this error {err}"
             )
             raise err
+        except Exception as err:
+            # Capture any unanticipated errors here
+            print(
+                f"Unexpected {type(err).__name__} error - "
+                f"sleeping for {retry_timeout} seconds due to {err}"
+            )
+            raise err
 
         if should_retry:
             return self._run_prompt(
