@@ -25,7 +25,6 @@ from dotenv import load_dotenv
 
 # TODO(P1, features): Add Assistant API
 from openai.types import CompletionUsage
-from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
 
 from gpt_form_filler.form import FieldDefinition, FormData, FormDefinition, Option
@@ -35,8 +34,10 @@ from gpt_form_filler.form import FieldDefinition, FormData, FormDefinition, Opti
 DEFAULT_MODEL = "gpt-3.5-turbo-0125"
 BEST_MODEL = "gpt-4"
 BETTER_MODEL = "gpt-4-turbo-2024-04-09"
+# 16K context window and is optimized for dialog
 CHEAPEST_MODEL = "gpt-3.5-turbo-0125"
-# Sometimes seems the newest models experience downtime-so try to backup.
+GPT_3_5_INSTRUCT_MODEL = "gpt-3.5-turbo-instruct"
+# Sometimes seems the newest models experience downtime-so try to do backup.
 BACKUP_MODEL = "gpt-3.5-turbo"
 BACKUP_MODEL_AFTER_NUM_RETRIES = 3
 
@@ -122,8 +123,8 @@ class InMemoryCacheStore(CacheStoreBase):
         cache_key = InMemoryCacheStore._cache_key(entry.prompt, entry.model)
         self.cache[cache_key] = entry
         print(
-            f"In-memory cache: written {entry.model}:{entry.prompt_hash}"
-        )  # noqa: E231
+            f"In-memory cache: written {entry.model}:{entry.prompt_hash}"  # noqa: E231
+        )
 
 
 class PromptCache:
@@ -222,11 +223,11 @@ class OpenAiClient:
 
     def _run_prompt(
         self, prompt: str, model=DEFAULT_MODEL, retry_timeout=10, retry_num=0
-    ) -> Optional[ChatCompletion]:
+    ) -> Tuple[Optional[str], Optional[CompletionUsage]]:
         # wait is too long so carry on
         if retry_timeout > 300:
             print("ERROR: waiting for prompt too long")
-            return None
+            return None, None
         if retry_num >= BACKUP_MODEL_AFTER_NUM_RETRIES and model != BACKUP_MODEL:
             print(
                 f"WARNING: Changing model from {model} to {BACKUP_MODEL} after {retry_num} retries"
@@ -234,14 +235,21 @@ class OpenAiClient:
             # The "cutting-edge" models experience more downtime.
             model = BACKUP_MODEL
 
-        response = None
-        should_retry = False
         try:
-            # TODO(P2, devx): This can get stuck-ish, we should handle that somewhat nicely.
-            # NOTE: openai.Completion is only for older models.
-            response = self.client.chat.completions.create(
-                model=model, messages=[{"role": "system", "content": prompt}]
-            )
+            # Head `instruct` is better in well-defined tasks, while the other model is more chatty.
+            if model in ["gpt-3.5-turbo-instruct", "davinci-002", "babbage-002"]:
+                response = self.client.completions.create(model=model, prompt=prompt)
+                return response.choices[0].text.strip(), response.usage
+            else:
+                # TODO(P2, devx): This can get stuck-ish, we should handle that somewhat nicely.
+                # NOTE: openai.Completion is only for older models.
+                response = self.client.chat.completions.create(
+                    # TODO(P1, quality): might make sense to separate prompts out for better results
+                    model=model,
+                    messages=[{"role": "system", "content": prompt}],
+                )
+                return response.choices[0].message.content.strip(), response.usage
+
         # openai.error.RateLimitError: That model is currently overloaded with other requests.
         # You can retry your request, or contact us through our help center at help.openai.com
         # if the error persists.
@@ -254,7 +262,6 @@ class OpenAiClient:
             print(
                 f"Got time-based {type(err)} error - sleeping for {retry_timeout} cause {err}"
             )
-            should_retry = True
             time.sleep(retry_timeout)
         # Their fault
         # TODO(P1, open-ai-migration): openai.ServiceUnavailableError
@@ -262,7 +269,6 @@ class OpenAiClient:
             print(
                 f"Got server-side {type(err)} error - sleeping for {retry_timeout} cause {err}"
             )
-            should_retry = True
             time.sleep(retry_timeout)
         # Our fault
         except (
@@ -284,12 +290,10 @@ class OpenAiClient:
             )
             raise err
 
-        if should_retry:
-            return self._run_prompt(
-                prompt, model, 2 * retry_timeout, retry_num=retry_num + 1
-            )  # exponential backoff
-
-        return response
+        # Retry with exponential backoff
+        return self._run_prompt(
+            prompt, model, 2 * retry_timeout, retry_num=retry_num + 1
+        )
 
     # About 0.4 cents per request (about 2000 tokens). Using gpt-4 would be 15x more expensive :/
     # TODO(peter): Do sth about max prompt length (4096 tokens INCLUDING the generated response)
@@ -310,17 +314,15 @@ class OpenAiClient:
             if pcm.cache_hit:
                 return pcm.cache_entry.result
 
-            response = self._run_prompt(prompt, model)
-            if response is None:
+            gpt_result, usage = self._run_prompt(prompt, model)
+            if gpt_result is None:
                 return None
 
-            gpt_result = response.choices[0].message.content.strip()
             pcm.cache_entry.result = gpt_result
 
-            token_usage: CompletionUsage = response.usage
-            if token_usage:
-                pcm.cache_entry.prompt_tokens = token_usage.prompt_tokens
-                pcm.cache_entry.completion_tokens = token_usage.completion_tokens
+            if usage:
+                pcm.cache_entry.prompt_tokens = usage.prompt_tokens
+                pcm.cache_entry.completion_tokens = usage.completion_tokens
 
             self.all_prompts.append(pcm.cache_entry)
             # `pcm.__exit__` will update the database
@@ -628,7 +630,7 @@ def gpt_response_to_json(raw_response: Optional[str], debug=True) -> Optional[An
     # Sometimes, it includes the input in the response. So only consider what is after "Output"
     match = re.search("(?i)output:", raw_response)
     if match:
-        raw_response = raw_response[match.start() :]
+        raw_response = raw_response[match.start() :]  # noqa E203
     # Yeah, sometimes it does that lol
     #   **Output:**<br> ["Shervin: security startup guy from Maryland who wears a 1337/1338 shirt"]<br>
     raw_response = raw_response.replace("<br>\n", "\n")
@@ -662,7 +664,7 @@ def gpt_response_to_json(raw_response: Optional[str], debug=True) -> Optional[An
         start_index = _get_first_occurrence(raw_response, ["{", "["])
         last_index = _get_last_occurrence(raw_response, ["}", "]"])
         # -1 works
-        raw_json = raw_response[start_index : last_index + 1]
+        raw_json = raw_response[start_index : last_index + 1]  # noqa E203
         if debug and len(raw_json) * 2 < len(
             raw_response
         ):  # heuristic to determine that we shortened too much
@@ -730,7 +732,7 @@ if __name__ == "__main__":
     openai_client = OpenAiClient(open_ai_api_key=OPEN_AI_API_KEY)
     test_prompt = "list neighborhoods in san francisco as json key: value where key is name and value is zip code"
     sf_result_1 = openai_client.run_prompt(
-        test_prompt, CHEAPEST_MODEL, print_prompt=True
+        test_prompt, GPT_3_5_INSTRUCT_MODEL, print_prompt=True
     )
     print(sf_result_1)
     # run again, this should yield a cache hit
