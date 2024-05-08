@@ -3,7 +3,7 @@ Programmatically fill in annoying intake forms with data dumps or knowledge base
 
 
 ## Motivation
-Repeated Manual Data Entry is not what humans like to do. 
+Repeated Manual Data Entry is not what humans like to do.
 
 What if you can update your CRM or fill in large intakes just from a voice note or a data dump?
 This tool is an opinionated attempt on solving this niche problem.
@@ -19,7 +19,7 @@ just addressing a more specific use case when:
 ## Implementations
 It was previously used to:
 * Meeting Notes to Hubspot API Contact Intake: [preview - requires HubSpot account](https://app.hubspot.com/ecosystem/43920988/marketplace/apps/_preview/voxana-voice-data-entry-2150554)
-* Push rows into Google Sheets API based of the sheet header. 
+* Push rows into Google Sheets API based of the sheet header.
 
 # Current State: WIP
 I wanted to re-use and opensource these utils so for now just shamelessly copy pasted from my private repo.
@@ -73,7 +73,7 @@ assert sf_result_1 == sf_result_2
 # assert it was served from cache
 assert len(openai_client.all_prompts) == 1
 
-# EXAMPLE Form, `description` is passed to GPT prompt to obtain result `name` of type == `field_type` 
+# EXAMPLE Form, `description` is passed to GPT prompt to obtain result `name` of type == `field_type`
 FOOD_LOG_FIELDS = [
     FieldDefinition(
         name="ingredient",
@@ -115,4 +115,12 @@ assert len(food_log_result) == 3
 # [('Ingredient', 'chicken'), ('Amount', 'fair amount'), ('Has Gluten?', False)]
 # [('Ingredient', 'sesame oil'), ('Amount', 'None'), ('Has Gluten?', False)]
 # [('Ingredient', 'tortilla chips'), ('Amount', 'some'), ('Has Gluten?', True)]
+```
+
+# Contributing
+
+## Local Development
+```bash
+make requirements
+pre-commit install
 ```
