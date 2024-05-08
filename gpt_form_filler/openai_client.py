@@ -234,8 +234,6 @@ class OpenAiClient:
             # The "cutting-edge" models experience more downtime.
             model = BACKUP_MODEL
 
-        # TODO(P1, ux): My testing on gpt-4 through the browser gives better results
-        #  - get access and use it on drafts.
         response = None
         should_retry = False
         try:
