@@ -23,7 +23,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/petercsiba/gpt-form-filler",
     packages=find_packages(),
-    install_requires=parse_requirements("requirements/local.txt"),
+    install_requires=parse_requirements("requirements/common.txt"),
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
