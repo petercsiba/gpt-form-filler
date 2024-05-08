@@ -1,0 +1,4 @@
+**/__pycache__/
+.env
+.idea
+gpt-form-filler.egg-info

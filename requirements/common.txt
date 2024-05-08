@@ -1,0 +1,7 @@
+openai
+phonenumbers
+pydantic
+python-dateutil
+python-dotenv
+pytz
+tiktoken

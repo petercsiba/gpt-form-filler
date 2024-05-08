@@ -28,3 +28,10 @@ I wanted to re-use and opensource these utils so for now just shamelessly copy p
 * Caching GPT request, useful for re-runs
 * TODO: Better DevX for the form object
 * TODO: Use JSON mode for OpenAI (this was written before it came out so there is custom monkeypatched code)
+
+## Installation
+Install GPT Form Filler Python Library using pip:
+
+```shell
+pip install git+https://github.com/petercsiba/gpt-form-filler.git
+```
