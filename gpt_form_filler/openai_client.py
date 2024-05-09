@@ -92,7 +92,7 @@ class CacheStoreBase(ABC):
     """Abstract base class for the caching mechanism."""
 
     @abstractmethod
-    def get_or_create(self, prompt: str, model: str) -> PromptCacheEntry:
+    def maybe_get(self, prompt: str, model: str) -> PromptCacheEntry:
         pass
 
     @abstractmethod
@@ -108,7 +108,7 @@ class InMemoryCacheStore(CacheStoreBase):
     def _cache_key(prompt, model) -> Tuple[str, str]:
         return _get_prompt_hash(prompt), model
 
-    def get_or_create(self, prompt: str, model: str) -> PromptCacheEntry:
+    def maybe_get(self, prompt: str, model: str) -> PromptCacheEntry:
         cache_key = InMemoryCacheStore._cache_key(prompt, model)
         if cache_key not in self.cache:
             entry = PromptCacheEntry(
@@ -146,7 +146,7 @@ class PromptCache:
             loggable_prompt = self.prompt.replace("\n", " ")
             print(f"Asking {self.model} for: {loggable_prompt}")
 
-        self.cache_entry = self.cache_store.get_or_create(
+        self.cache_entry = self.cache_store.maybe_get(
             prompt=self.prompt, model=self.model
         )
         if bool(self.cache_entry.result):
@@ -171,6 +171,9 @@ class PromptCache:
             )
 
         if self.cache_entry.result is not None and not self.cache_hit:
+            print(
+                f"prompt_log: writing to cache {self.model}:{self.cache_entry.prompt_hash()}"  # noqa: E231
+            )
             self.cache_store.write_cache(self.cache_entry)
 
 
