@@ -202,9 +202,9 @@ class FieldDefinition:
 
     def _validate_number(self, value: Any):
         try:
-            return int(value)
+            return float(value)
         except ValueError:
-            self._validation_error("int", value)
+            self._validation_error("float", value)
             return None
 
     def _validate_phonenumber(self, value: Any, default_region="US"):
