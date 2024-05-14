@@ -32,7 +32,7 @@ from gpt_form_filler.form import FieldDefinition, FormData, FormDefinition, Opti
 # TODO(P2, specify organization id): Header OpenAI-Organization
 DEFAULT_MODEL = "gpt-3.5-turbo-0125"
 BEST_MODEL = "gpt-4"
-BETTER_MODEL = "gpt-4-turbo-2024-04-09"
+BETTER_MODEL = "gpt-4o"
 # 16K context window and is optimized for dialog
 CHEAPEST_MODEL = "gpt-3.5-turbo-0125"
 GPT_3_5_INSTRUCT_MODEL = "gpt-3.5-turbo-instruct"
@@ -206,6 +206,8 @@ class OpenAiClient:
             stats.completion_tokens += output_tok
             stats.request_time_ms += prompt_cache_entry.request_time_ms
             # https://openai.com/pricing
+            if prompt_cache_entry.model.startswith("gpt-4o"):
+                stats.millionth_dollar_estimate += 5 * input_tok + 15 * output_tok
             if prompt_cache_entry.model.startswith("gpt-4-turbo"):
                 stats.millionth_dollar_estimate += 10 * input_tok + 30 * output_tok
             elif prompt_cache_entry.model.startswith("gpt-4-32k"):
