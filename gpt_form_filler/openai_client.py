@@ -115,7 +115,7 @@ class InMemoryCacheStore(CacheStoreBase):
                 model=model,
                 prompt=prompt,
             )
-            self.cache[cache_key] = entry
+            return entry
         return self.cache[cache_key]
 
     def write_cache(self, entry: PromptCacheEntry) -> None:
@@ -128,7 +128,11 @@ class InMemoryCacheStore(CacheStoreBase):
 
 class PromptCache:
     def __init__(
-        self, cache_store: CacheStoreBase, prompt: str, model: str, print_prompt: bool
+        self,
+        cache_store: CacheStoreBase,
+        prompt: str,
+        model: str,
+        print_usage: bool = True,
     ):
         self.cache_store = cache_store
         self.cache_entry = PromptCacheEntry(prompt=prompt, model=model)
@@ -137,12 +141,12 @@ class PromptCache:
         self.prompt = prompt
         self.model = model
 
-        self.print_prompt: bool = print_prompt
+        self.print_usage: bool = print_usage
         self.cache_hit: bool = False
         self.start_time: Optional[float] = None
 
     def __enter__(self):
-        if self.print_prompt:
+        if self.print_usage:
             loggable_prompt = self.prompt.replace("\n", " ")
             print(f"Asking {self.model} for: {loggable_prompt}")
 
@@ -164,13 +168,23 @@ class PromptCache:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cache_entry.request_time_ms = int(1000 * (time.time() - self.start_time))
-        if self.print_prompt:
+        if self.print_usage:
             seconds = self.cache_entry.request_time_ms / 1000
             print(
                 f"{self.model}: {seconds} seconds used {self.cache_entry.total_tokens()}"
             )
 
-        if self.cache_entry.result is not None and not self.cache_hit:
+        if not self.cache_hit:
+            # If the result is None or empty string,
+            # we don't want to cache it as it might be an error (and cheap to re-run).
+            if (
+                self.cache_entry.result is None
+                or f"{self.cache_entry.result}".strip() == ""
+            ):
+                print(
+                    f"WARNING: OpenAI returned None, NOT caching for {self.model}:{self.cache_entry.prompt_hash()}"
+                )
+                return
             print(
                 f"prompt_log: writing to cache {self.model}:{self.cache_entry.prompt_hash()}"  # noqa: E231
             )
@@ -199,6 +213,7 @@ class OpenAiClient:
 
     def sum_up_prompt_stats(self) -> PromptStats:
         stats = PromptStats()
+        # TODO(P2, devx): Would be nice to persist the cost of the run in the database.
         for prompt_cache_entry in self.all_prompts:
             input_tok = prompt_cache_entry.prompt_tokens
             output_tok = prompt_cache_entry.completion_tokens
@@ -261,14 +276,12 @@ class OpenAiClient:
         except (
             openai.RateLimitError,
             openai.Timeout,
-            # TODO(P1, open-ai-migration): openai.TryAgain,
         ) as err:
             print(
                 f"Got time-based {type(err)} error - sleeping for {retry_timeout} cause {err}"
             )
             time.sleep(retry_timeout)
         # Their fault
-        # TODO(P1, open-ai-migration): openai.ServiceUnavailableError
         except (openai.APIError, openai.InternalServerError) as err:
             print(
                 f"Got server-side {type(err)} error - sleeping for {retry_timeout} cause {err}"
@@ -313,7 +326,7 @@ class OpenAiClient:
             cache_store=self.cache_store,
             prompt=prompt,
             model=model,
-            print_prompt=self._should_print_prompt(print_prompt),
+            print_usage=self._should_print_prompt(print_prompt),
         ) as pcm:
             if pcm.cache_hit:
                 return pcm.cache_entry.result
@@ -495,8 +508,10 @@ class OpenAiClient:
     # Swedish, Tagalog, Tamil, Thai, Turkish, Ukrainian, Urdu, Vietnamese, and Welsh.
     # NOTE: I verified that for English there is no difference between "transcribe" and "translate",
     # by changing it locally and seeing the translate is "cached_prompt: serving out of cache".
-    # TODO(P0, quality): Once it comes out use Whisper 3
-    # TODO(P1, quality): For real world call transcription diarization is a must IMHO.
+    # TODO(P1, quality): Once it comes out use Whisper 3
+    #   The Whisper v2-large model is currently available through our API with the whisper-1 model name.
+    #   As of 2024-08-21: https://platform.openai.com/docs/models/whisper
+    # TODO(P2, quality): For real world call transcription diarization is a must IMHO.
     #   https://community.openai.com/t/thoughts-on-whisper-3-announcement/475687/3
     def transcribe_audio(self, audio_filepath, model="whisper-1"):
         prompt_hint = "notes on my discussion from an in-person meeting or conference"
@@ -506,7 +521,7 @@ class OpenAiClient:
             cache_store=self.cache_store,
             prompt=audio_filepath,
             model=model,
-            print_prompt=self._should_print_prompt(True),
+            print_usage=self._should_print_prompt(True),
         ) as pcm:
             # We only use the cache for local runs to further speed up development (and reduce cost)
             # TODO(P1, devx): Fix this
@@ -568,6 +583,17 @@ def _get_last_occurrence(s: str, list_of_chars: list):
     return last_occurrence
 
 
+# TODO:
+# WARNING: couldn't decode orig response cause Invalid control character at: line 2 column 74 (char 75). Orig response {
+#     "pricing_tiers": "Swift Auto Refresh offers a range of pricing tiers:
+# - Basic: Free
+# - Pro: $4.99/month
+# - Premium: $9.99/month",
+#     "lowest_paid_tier": 4.99,
+#     "tags": "Productivity, Automation, Browser Extension",
+#     "main_integrations": "Slack, Trello, Asana, GitHub, Microsoft Teams, Jira, Zoom, Salesforce, Dropbox, Zendesk",
+#     "elevator_pitch": "Swift Auto Refresh - Effortlessly stay updated on multiple web pages with precision and ease."
+# }
 def _try_decode_non_json(raw_response: str):
     # Sometimes it returns a list of strings in format of " -"
     lines = raw_response.split("\n")
