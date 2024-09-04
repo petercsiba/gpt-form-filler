@@ -551,6 +551,16 @@ class OpenAiClient:
                     # TODO(P1, open-ai-migration): temperatue=0
                 )
                 transcript = res.text
+                # TODO(P1, revenue): We should measure the cost of the transcription
+                # AND consider using our own Whisper deployment for this.
+                # TIL: The OpenAI model is inherently a 30 second max model,
+                # and OpenAI does magic techniques to blend these inferences together themselves.
+                # If you send 600 seconds exactly and get billed for more,
+                # it might be that they are billing for actual model cost including their own overlapping techniques.
+                # https://community.openai.com/t/api-model-whisper-real-cost/469816/3
+                # TODO(P1, revenue): You can use silence detection algorithms to both split chunks so you do your
+                # own management of keeping pieces below 30 seconds, and also to strip out where you are otherwise
+                # billed for audio with no speech to transcribe.
                 print(f"audio transcript: {res}")
                 pcm.cache_entry.result = transcript
                 # `pcm.__exit__` will update the database
