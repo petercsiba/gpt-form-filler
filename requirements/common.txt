@@ -4,5 +4,3 @@ pydantic
 python-dateutil
 python-dotenv
 pytz
-# The current one requires a newer version of Rust which struggles on Alpine
-tiktoken==0.4.0

@@ -20,7 +20,6 @@ from typing import Any, List, Optional, Tuple
 
 import openai
 import pytz
-import tiktoken
 
 # TODO(P1, features): Add Assistant API
 from openai.types import CompletionUsage
@@ -738,14 +737,3 @@ def pretty_filesize_path(file_path: str) -> str:
 
 def get_fileinfo(file_handle):
     return f"File {file_handle.name} is {pretty_filesize_path(file_handle.name)}"
-
-
-def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
-    # https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
-    # Encoding name	OpenAI models
-    # cl100k_base	gpt-4, gpt-3.5-turbo, text-embedding-ada-002
-    # p50k_base	Codex models, text-davinci-002, text-davinci-003
-    # r50k_base (or gpt2)	GPT-3 models like davinci
-    encoding = tiktoken.get_encoding(encoding_name)
-    num_tokens = len(encoding.encode(string))
-    return num_tokens
