@@ -155,7 +155,7 @@ class PromptCache:
         if bool(self.cache_entry.result):
             self.cache_hit = True
             print(
-                f"prompt_log: serving from cache {self.model}:{self.cache_entry.prompt_hash()}"  # noqa: E231
+                f"prompt_log: cache hit {self.model}:{self.cache_entry.prompt_hash()}"  # noqa: E231
             )
             if self.cache_entry.prompt != self.prompt:
                 print(
@@ -494,6 +494,8 @@ class OpenAiClient:
 
         return results, None
 
+    # Usage: use_cache_hit=True to only use the cache on audio_filepath, great for local use, might be bad for prod.
+    #
     # TODO(P2, Facebook MMS): Better multi-language support, Slovak was OK, but it got some things quite wrong.
     #   * https://about.fb.com/news/2023/05/ai-massively-multilingual-speech-technology/
     #   We might need to run the above ourselves for now (BaseTen hosting?)
@@ -512,9 +514,13 @@ class OpenAiClient:
     #   As of 2024-08-21: https://platform.openai.com/docs/models/whisper
     # TODO(P2, quality): For real world call transcription diarization is a must IMHO.
     #   https://community.openai.com/t/thoughts-on-whisper-3-announcement/475687/3
-    def transcribe_audio(self, audio_filepath, model="whisper-1"):
-        prompt_hint = "notes on my discussion from an in-person meeting or conference"
-
+    def transcribe_audio(
+        self,
+        audio_filepath: str,
+        model: str = "whisper-1",
+        prompt_hint: Optional[str] = None,
+        use_cache_hit: bool = False,
+    ):
         # We mainly do caching
         with PromptCache(
             cache_store=self.cache_store,
@@ -522,10 +528,13 @@ class OpenAiClient:
             model=model,
             print_usage=self._should_print_prompt(True),
         ) as pcm:
-            # We only use the cache for local runs to further speed up development (and reduce cost)
-            # TODO(P1, devx): Fix this
-            # if pcm.cache_hit and not is_running_in_aws():
-            #     return pcm.prompt_log.result
+            if pcm.cache_hit:
+                if use_cache_hit:
+                    print(f"transcribe_audio serving from cache for {audio_filepath}")
+                    return pcm.cache_entry.result
+                print(
+                    f"transcribe_audio cache hit but NOT using it cause use_cache_hit=False for {audio_filepath}"
+                )
 
             with open(audio_filepath, "rb") as audio_file:
                 # TODO(P0, bug): Seems like empty audio files can get stuck here (maybe temperature=0 and backoff?).
@@ -560,7 +569,7 @@ class OpenAiClient:
                 # TODO(P1, revenue): You can use silence detection algorithms to both split chunks so you do your
                 # own management of keeping pieces below 30 seconds, and also to strip out where you are otherwise
                 # billed for audio with no speech to transcribe.
-                print(f"audio transcript: {res}")
+                print(f"audio transcript: {transcript}")
                 pcm.cache_entry.result = transcript
                 # `pcm.__exit__` will update the database
                 return transcript
